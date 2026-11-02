@@ -1,0 +1,11 @@
+{
+  "name": "karate-api-contract",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pruebas de contrato con Karate contra una API que incumple su propio contrato a proposito.",
+  "scripts": {
+    "api": "node demo/servidor.js",
+    "api:conforme": "node -e \"process.env.API_CONFORME='1';require('./demo/servidor.js')\"",
+    "contrato:lint": "npx --yes @stoplight/spectral-cli@6 lint demo/openapi.yaml --ruleset spectral.yaml"
+  }
+}

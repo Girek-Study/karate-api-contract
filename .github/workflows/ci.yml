@@ -1,0 +1,121 @@
+# ============================================================================
+#  Dos trabajos, y los dos tienen que pasar.
+#
+#  `detecta`   — levanta la API con sus cuatro incumplimientos y exige que la
+#                suite FALLE, con exactamente cuatro escenarios en rojo. Si
+#                pasara, la suite no estaría comprobando nada.
+#  `no-miente` — levanta la API conforme y exige que la suite pase entera. Si
+#                fallara, las aserciones estarían inventando defectos.
+#
+#  Casi todas las suites verifican solo lo segundo. Una suite que nunca ha
+#  visto un rojo que le corresponde no ha demostrado que sirva para algo.
+# ============================================================================
+
+name: contrato
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  detecta:
+    name: Detecta los 4 incumplimientos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Levantar la API con los incumplimientos activos
+        run: |
+          node demo/servidor.js &
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8090/salud && break
+            sleep 1
+          done
+          curl -s http://localhost:8090/salud
+
+      - name: Correr la suite esperando que falle
+        run: |
+          set +e
+          mvn -B test -Dapi.url=http://localhost:8090 > corrida.log 2>&1
+          CODIGO=$?
+          set -e
+          cat corrida.log
+
+          if [ "$CODIGO" -eq 0 ]; then
+            echo "::error::La suite pasó contra una API que incumple el contrato en cuatro puntos."
+            exit 1
+          fi
+
+          # No vale con que falle: tiene que fallar cuatro veces. Si mañana
+          # fallan tres, alguien debilitó una aserción; si fallan cinco, hay
+          # un defecto nuevo que nadie ha mirado. Las dos cosas merecen que
+          # esto se ponga rojo.
+          FALLOS=$(grep -oE 'Tests run: [0-9]+, Failures: [0-9]+' corrida.log | tail -1 | grep -oE 'Failures: [0-9]+' | grep -oE '[0-9]+')
+          echo "Escenarios en rojo: $FALLOS"
+
+          if [ "$FALLOS" != "4" ]; then
+            echo "::error::Se esperaban 4 escenarios en rojo y hubo $FALLOS. Mira docs/05-hallazgos.md."
+            exit 1
+          fi
+
+          echo "La suite detectó los cuatro incumplimientos."
+
+  no-miente:
+    name: No inventa fallos con la API conforme
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Levantar la API conforme al contrato
+        env:
+          API_CONFORME: '1'
+        run: |
+          node demo/servidor.js &
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8090/salud && break
+            sleep 1
+          done
+          # Que la sonda confirme el modo: un `conforme: false` aquí haría que
+          # este trabajo fallara por el motivo del otro.
+          curl -s http://localhost:8090/salud | grep -q '"conforme":true'
+
+      - name: Correr la suite esperando que pase entera
+        run: mvn -B test -Dapi.url=http://localhost:8090
+
+  contrato:
+    name: El contrato pasa el linter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      # El contrato es el oráculo de la suite. Un contrato ambiguo traslada su
+      # ambigüedad entera a las aserciones, así que se revisa como código.
+      - name: Spectral sobre demo/openapi.yaml
+        run: npx --yes @stoplight/spectral-cli@6 lint demo/openapi.yaml --ruleset spectral.yaml

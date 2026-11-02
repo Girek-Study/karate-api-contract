@@ -1,0 +1,53 @@
+# ============================================================================
+#  Para correr la suite sin instalar nada en el equipo.
+#
+#  Karate 1.5 exige Java 17 y Maven. En la máquina donde se escribió esto el
+#  host tenía Java 8 y Maven sin JAVA_HOME: con este archivo la suite corre
+#  igual, y nadie tiene que tocar su PATH para leer un repositorio.
+#
+#    docker compose run --rm karate                      # con los 4 defectos
+#    API_CONFORME=1 docker compose run --rm karate       # API conforme
+#
+#  El servicio `api` se levanta solo, porque `karate` depende de que su sonda
+#  de salud responda.
+# ============================================================================
+
+services:
+  api:
+    image: node:22-alpine
+    container_name: karate-api-citas
+    working_dir: /app
+    volumes:
+      - ./demo:/app:ro
+    environment:
+      PUERTO: 8090
+      # Vacío = los cuatro incumplimientos activos. Con 1, API conforme.
+      API_CONFORME: ${API_CONFORME:-}
+    command: node servidor.js
+    healthcheck:
+      # Sin esto Maven arranca antes que el servidor y los primeros escenarios
+      # fallan con «connection refused», que no es el fallo que interesa.
+      test: ['CMD', 'wget', '-q', '-O-', 'http://localhost:8090/salud']
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 2s
+
+  karate:
+    image: maven:3.9-eclipse-temurin-17
+    container_name: karate-corredor
+    working_dir: /proyecto
+    volumes:
+      - .:/proyecto
+      # El caché de Maven en un volumen con nombre: sin él, cada corrida
+      # vuelve a descargar Karate entero y tarda minutos en vez de segundos.
+      - cache-maven:/root/.m2
+    depends_on:
+      api:
+        condition: service_healthy
+    # `api` es el nombre del servicio, que es también su nombre de host dentro
+    # de la red del compose. No hace falta publicar ningún puerto al equipo.
+    command: mvn -B test -Dapi.url=http://api:8090
+
+volumes:
+  cache-maven:

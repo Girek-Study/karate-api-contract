@@ -1,0 +1,20 @@
+# Reglas con las que se revisa demo/openapi.yaml.
+#
+# El contrato es el oraculo de la suite: lo que este archivo no obligue a
+# escribir, las aserciones lo tendran que adivinar. Se parte del conjunto
+# oficial de Spectral para OpenAPI y se endurece lo que importa aqui.
+extends: ['spectral:oas']
+
+rules:
+  # Un endpoint sin descripcion obliga a leer el codigo para saber que hace,
+  # y entonces el contrato ya no es la fuente de verdad.
+  operation-description: error
+  operation-operationId: error
+  operation-tags: error
+
+  # Una respuesta sin esquema no se puede comprobar: `match response == ???`.
+  oas3-valid-media-example: error
+
+  # El aviso de servidor en localhost no aplica: la API vive dentro del
+  # repositorio a proposito y no hay ningun entorno al que apuntar.
+  oas3-api-servers: off

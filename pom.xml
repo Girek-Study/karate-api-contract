@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <!-- ======================================================================
+       Suite de contrato con Karate.
+
+       Solo dependencias de prueba: este proyecto no produce un artefacto, así
+       que `packaging` queda en jar y no se instala nada en el repositorio
+       local más allá de lo que Karate necesita.
+
+       Karate 1.5.x exige Java 17. El repositorio trae su propio contenedor
+       para no obligar a instalar un JDK: en la máquina donde se escribió esto
+       el host tenía Java 8 y Maven sin JAVA_HOME, y la suite corrió igual.
+       El comando está en el README y en docker-compose.yml.
+       ====================================================================== -->
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>study.girek</groupId>
+  <artifactId>karate-api-contract</artifactId>
+  <version>1.0.0</version>
+  <name>karate-api-contract</name>
+  <description>Pruebas de contrato de API con Karate</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+
+    <karate.version>1.5.1</karate.version>
+
+    <!-- Esta versión NO se elige, se copia de la que arrastra Karate.
+         `karate-junit5:1.5.1` trae `junit-jupiter-api:5.10.2`, y con ella
+         `junit-platform-commons:1.10.2`. Declarar el engine en 5.11.4 mete un
+         `junit-platform-engine:1.11.4` al lado, y JUnit Platform no tolera dos
+         versiones distintas de sí mismo.
+         Lo que pasa entonces es lo de siempre: nada dice qué falla. Surefire
+         imprime «TestEngine with ID 'junit-jupiter' failed to discover tests»
+         y «Tests run: 0». Si el proyecto no tuviera el build en rojo por otro
+         motivo, una suite de cero pruebas se vería igual que una que pasa.
+         Al subir Karate, `mvn dependency:tree` dice qué número toca aquí. -->
+    <junit.version>5.10.2</junit.version>
+
+    <surefire.version>3.5.2</surefire.version>
+
+    <!-- Dónde escucha la API de ejemplo. Se pasa con -Dapi.url=... y lo lee
+         karate-config.js, para que el mismo .feature valga contra la API
+         defectuosa y contra la conforme sin tocar ni una línea. -->
+    <api.url>http://localhost:8090</api.url>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.karatelabs</groupId>
+      <artifactId>karate-junit5</artifactId>
+      <version>${karate.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-engine</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <testResources>
+      <!-- Los .feature viven junto al runner, en src/test/resources, y Maven
+           no los copia al classpath si no se dice aquí. Sin esto Karate no
+           encuentra ni un escenario y la suite pasa con cero pruebas, que es
+           la forma más silenciosa de tener una suite inútil. -->
+      <testResource>
+        <directory>src/test/resources</directory>
+        <includes>
+          <include>**/*</include>
+        </includes>
+      </testResource>
+    </testResources>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${surefire.version}</version>
+        <configuration>
+          <systemPropertyVariables>
+            <api.url>${api.url}</api.url>
+          </systemPropertyVariables>
+          <!-- Sin esto, un fallo de aserción de Karate sale como error de
+               JUnit sin el detalle de qué campo falló. -->
+          <useFile>false</useFile>
+          <trimStackTrace>false</trimStackTrace>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

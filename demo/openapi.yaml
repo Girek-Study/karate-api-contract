@@ -1,0 +1,388 @@
+openapi: 3.0.3
+
+# ============================================================================
+#  Contrato de la API de citas.
+#
+#  Este archivo es el oráculo de la suite: las pruebas no comprueban lo que la
+#  API hace, comprueban lo que este archivo promete. Cuando los dos discrepan,
+#  el que está mal no es automáticamente el código.
+#
+#  Spectral lo revisa aparte (`npm run contrato:lint`): un contrato que no pasa
+#  el linter no sirve de oráculo, porque la ambigüedad se traslada entera a las
+#  aserciones.
+# ============================================================================
+
+info:
+  title: API de agenda de citas
+  version: 1.0.0
+  description: |
+    API de ejemplo del repositorio `karate-api-contract`. Vive dentro del
+    repositorio y no sale a internet.
+
+    Incumple este contrato en cuatro puntos a propósito; se apagan con
+    `API_CONFORME=1`. El detalle está en `docs/05-hallazgos.md`.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  contact:
+    name: Girek Study
+    url: https://girek-study.com
+
+servers:
+  - url: http://localhost:8090
+    description: La API de ejemplo, levantada en local
+
+tags:
+  - name: Sesiones
+    description: Autenticación
+  - name: Citas
+    description: Agenda de citas
+  - name: Catálogos
+    description: Datos de referencia
+  - name: Operación
+    description: Sonda de salud
+
+paths:
+  /salud:
+    get:
+      tags: [Operación]
+      summary: Sonda de salud
+      description: Dice si el proceso responde y en qué modo arrancó.
+      operationId: consultarSalud
+      security: []
+      responses:
+        '200':
+          description: El proceso responde
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [estado, conforme]
+                properties:
+                  estado:
+                    type: string
+                    enum: [arriba]
+                  conforme:
+                    type: boolean
+                    description: Si los cuatro incumplimientos están apagados
+
+  /sesiones:
+    post:
+      tags: [Sesiones]
+      summary: Abrir sesión
+      description: Cambia usuario y clave por un token de portador.
+      operationId: abrirSesion
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [usuario, clave]
+              properties:
+                usuario:
+                  type: string
+                  minLength: 1
+                clave:
+                  type: string
+                  minLength: 1
+      responses:
+        '201':
+          description: Sesión abierta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sesion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+
+  /especialidades:
+    get:
+      tags: [Catálogos]
+      summary: Listar especialidades
+      description: Catálogo público de especialidades con su duración de cita.
+      operationId: listarEspecialidades
+      security: []
+      responses:
+        '200':
+          description: El catálogo completo
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [datos, total]
+                properties:
+                  datos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Especialidad'
+                  total:
+                    type: integer
+                    minimum: 0
+
+  /citas:
+    get:
+      tags: [Citas]
+      summary: Listar citas
+      description: Devuelve una página de citas y el total de la colección.
+      operationId: listarCitas
+      parameters:
+        - name: limite
+          in: query
+          required: false
+          description: Cuántas citas devuelve esta página. Tope de 50.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Una página de citas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaDeCitas'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+
+    post:
+      tags: [Citas]
+      summary: Crear una cita
+      description: |
+        Crea una cita. Exige sesión: sin token válido responde 401 y no crea
+        nada.
+      operationId: crearCita
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CitaNueva'
+      responses:
+        '201':
+          description: Cita creada
+          headers:
+            location:
+              description: Ruta de la cita creada
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cita'
+        '400':
+          description: La cita no supera la validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorConCampos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '409':
+          description: Ya hay una cita de esa especialidad en ese horario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /citas/{citaId}:
+    parameters:
+      - name: citaId
+        in: path
+        required: true
+        description: Identificador de la cita, con la forma CITA-0000.
+        schema:
+          type: string
+          pattern: '^CITA-\d{4}$'
+
+    get:
+      tags: [Citas]
+      summary: Consultar una cita
+      description: |
+        Devuelve una cita. El cuerpo es el mismo objeto `Cita` que aparece en
+        la colección: los mismos campos y los mismos tipos.
+      operationId: consultarCita
+      responses:
+        '200':
+          description: La cita
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cita'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+    delete:
+      tags: [Citas]
+      summary: Anular una cita
+      description: Anula una cita. Exige el rol GESTOR.
+      operationId: anularCita
+      responses:
+        '204':
+          description: Anulada, sin cuerpo
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          description: La sesión no tiene el rol GESTOR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+components:
+  securitySchemes:
+    portador:
+      type: http
+      scheme: bearer
+      description: El token que devuelve POST /sesiones.
+
+  schemas:
+    Sesion:
+      type: object
+      required: [token, rol, expiraEn]
+      properties:
+        token:
+          type: string
+          format: uuid
+        rol:
+          type: string
+          enum: [LECTOR, GESTOR]
+        expiraEn:
+          type: string
+          format: date-time
+
+    Especialidad:
+      type: object
+      required: [codigo, nombre, duracionMinutos]
+      properties:
+        codigo:
+          type: string
+          pattern: '^[A-Z-]{3,10}$'
+        nombre:
+          type: string
+          minLength: 1
+        duracionMinutos:
+          type: integer
+          minimum: 5
+          maximum: 120
+
+    Cita:
+      type: object
+      required: [id, estado, creadoEn, pacienteId, especialidad, inicio]
+      properties:
+        id:
+          type: string
+          pattern: '^CITA-\d{4}$'
+        estado:
+          type: string
+          enum: [CONFIRMADA, ANULADA]
+        creadoEn:
+          type: string
+          format: date-time
+          description: Cuándo se creó la cita, en ISO 8601 con zona.
+        pacienteId:
+          type: string
+          pattern: '^PAC-\d{4}$'
+          description: Identificador del paciente, siempre con el prefijo PAC-.
+        especialidad:
+          type: string
+          pattern: '^[A-Z-]{3,10}$'
+        inicio:
+          type: string
+          format: date-time
+
+    CitaNueva:
+      type: object
+      required: [pacienteId, especialidad, inicio]
+      properties:
+        pacienteId:
+          type: string
+          pattern: '^PAC-\d{4}$'
+        especialidad:
+          type: string
+          pattern: '^[A-Z-]{3,10}$'
+        inicio:
+          type: string
+          format: date-time
+
+    PaginaDeCitas:
+      type: object
+      required: [datos, total]
+      properties:
+        datos:
+          type: array
+          description: Las citas de esta página, como mucho `limite`.
+          items:
+            $ref: '#/components/schemas/Cita'
+        total:
+          type: integer
+          minimum: 0
+          description: |
+            El total de citas de la colección, no el tamaño de esta página.
+            Quien pagine suma `limite` hasta alcanzar este número.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [codigo, detalle]
+          properties:
+            codigo:
+              type: string
+              pattern: '^[A-Z_]+$'
+            detalle:
+              type: string
+              minLength: 1
+
+    ErrorConCampos:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [codigo, detalle, campos]
+          properties:
+            codigo:
+              type: string
+              pattern: '^[A-Z_]+$'
+            detalle:
+              type: string
+              minLength: 1
+            campos:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [campo, motivo]
+                properties:
+                  campo:
+                    type: string
+                  motivo:
+                    type: string
+
+  responses:
+    NoAutenticado:
+      description: Falta el token de sesión o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NoEncontrado:
+      description: El recurso no existe
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - portador: []

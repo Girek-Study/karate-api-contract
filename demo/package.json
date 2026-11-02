@@ -1,0 +1,10 @@
+{
+  "name": "api-citas-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "API de ejemplo del repositorio. Sin dependencias: Node y nada mas.",
+  "scripts": {
+    "start": "node servidor.js"
+  }
+}
